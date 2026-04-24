@@ -44,14 +44,146 @@ Le fonctionnement général est le suivant :
 └── Architecture_cible.png
 
 
-## Vérification
+---
 
+## 5. Guide d'exécution - Ligne de commande
+
+### 5.1 Initialisation et configuration
+
+**Étape 1 : Initialiser Packer**
+```bash
+packer init .
+```
+Cela télécharge les plugins nécessaires (ici le plugin Docker) définis dans `nginx.pkr.hcl`.
+
+**Étape 2 : Construire l'image Docker personnalisée**
 ```bash
 packer build nginx.pkr.hcl
+```
+Cette commande :
+- Récupère l'image `nginx:alpine`
+- Copie `index.html` dans le conteneur
+- Génère une nouvelle image Docker nommée `nginx-custom:1.0`
+
+**Étape 3 : Vérifier la création de l'image**
+```bash
 docker images | grep nginx-custom
+```
+Vous devriez voir : `nginx-custom    1.0    <IMAGE_ID>    <SIZE>`
+
+---
+
+### 5.2 Configuration du cluster K3d
+
+**Étape 4 : Créer un cluster K3d** (si nécessaire)
+```bash
+k3d cluster create lab
+```
+Crée un cluster Kubernetes local nommé "lab" basé sur K3s.
+
+**Étape 5 : Importer l'image Docker dans le cluster K3d**
+```bash
 k3d image import nginx-custom:1.0 -c lab
+```
+Rend l'image Docker disponible pour le cluster K3d sans la pousser vers un registre.
+
+**Étape 6 : Vérifier la connexion au cluster**
+```bash
+kubectl cluster-info
+kubectl get nodes
+```
+Confirme que vous êtes connecté au cluster K3d correct.
+
+---
+
+### 5.3 Déploiement avec Ansible
+
+**Étape 7 : Déployer l'application Nginx**
+```bash
 ansible-playbook deploy-nginx.yml
+```
+Cette commande crée :
+- Un **Deployment** avec 2 replicas du pod Nginx
+- Un **Service** de type NodePort pour exposer l'application
+
+**Étape 8 : Vérifier le déploiement**
+```bash
 kubectl get pods
 kubectl get svc
+kubectl get deployment
+```
+Vous devriez voir :
+- 2 pods `web-*` en état `Running`
+- 1 service `web` de type `NodePort`
+
+---
+
+### 5.4 Tests et accès à l'application
+
+**Étape 9 : Exposer le service localement**
+```bash
 kubectl port-forward svc/web 8080:80
+```
+Crée un tunnel pour accéder au service Nginx local via `http://localhost:8080`
+
+**Étape 10 : Tester l'application** (dans un autre terminal)
+```bash
 curl http://localhost:8080
+```
+Affiche le contenu de votre `index.html`.
+
+**Alternative - Accès via le port NodePort direct :**
+```bash
+kubectl get svc web
+# Prendre le port assigné (ex: 31234)
+curl http://localhost:31234
+```
+
+---
+
+## 6. Commandes de nettoyage (optionnel)
+
+**Supprimer le déploiement :**
+```bash
+kubectl delete deployment web
+kubectl delete svc web
+```
+
+**Arrêter le cluster K3d :**
+```bash
+k3d cluster stop lab
+```
+
+**Supprimer complètement le cluster :**
+```bash
+k3d cluster delete lab
+```
+
+**Supprimer l'image Docker :**
+```bash
+docker rmi nginx-custom:1.0
+```
+
+---
+
+## 7. Résumé des commandes complètes (ordre d'exécution)
+
+```bash
+# Étapes de construction
+packer init .
+packer build nginx.pkr.hcl
+docker images | grep nginx-custom
+
+# Configuration du cluster
+k3d cluster create lab
+k3d image import nginx-custom:1.0 -c lab
+
+# Déploiement
+ansible-playbook deploy-nginx.yml
+
+# Vérification
+kubectl get pods
+kubectl get svc
+kubectl get nodes
+
+# Tests
